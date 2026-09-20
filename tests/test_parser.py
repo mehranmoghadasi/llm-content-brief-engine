@@ -1,7 +1,6 @@
 """Tests for the HTML parser module."""
 
-from content_brief.parser import parse_page, _extract_headings, _extract_entities, Heading
-
+from content_brief.parser import _extract_entities, _extract_headings, parse_page
 
 SAMPLE_HTML = """
 <html>

@@ -1,12 +1,8 @@
 """Tests for the brief builder / model assembly module."""
 
-from content_brief.brief_builder import (
-    build_brief, _aggregate_entities, _aggregate_paa, _build_competitor_summaries
-)
-from content_brief.parser import ParsedPage, Heading
-from content_brief.llm_analyzer import (
-    BriefAnalysis, HeadingSuggestion, CompetitorGap
-)
+from content_brief.brief_builder import _aggregate_paa, _build_competitor_summaries, build_brief
+from content_brief.llm_analyzer import BriefAnalysis, CompetitorGap, HeadingSuggestion
+from content_brief.parser import Heading, ParsedPage
 
 
 def _make_page(url: str, word_count: int = 1500, headings=None, paa=None):
