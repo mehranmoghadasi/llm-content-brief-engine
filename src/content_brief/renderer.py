@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -76,7 +75,7 @@ def render_markdown(brief: BriefModel, output_dir: Path) -> Path:
     lines.append(f"**Avg competitor word count:** {brief.avg_competitor_word_count:,}\n\n")
 
     lines.append("---\n\n## Brief Overview\n\n")
-    lines.append(f"| Field | Value |\n|---|---|\n")
+    lines.append("| Field | Value |\n|---|---|\n")
     lines.append(f"| Target keyword | `{brief.keyword}` |\n")
     lines.append(f"| Search intent | {brief.search_intent} |\n")
     lines.append(
@@ -100,11 +99,12 @@ def render_markdown(brief: BriefModel, output_dir: Path) -> Path:
     lines.append("---\n\n## Competitor Gap Opportunities\n\n")
     for gap in brief.competitor_gaps:
         lines.append(
-            f"**{gap['topic']}** _(covered by {gap['coverage_pct']}% of results)_  \n"
+            f"**{gap['topic']}** _(covered by {gap['coverage_pct']}% of crawled results — measured)_  \n"
             f"{gap['opportunity']}\n\n"
         )
 
-    lines.append("---\n\n## People Also Ask — Address These\n\n")
+    lines.append("---\n\n## Questions to Answer\n\n")
+    lines.append("_Harvested from related searches, FAQ schema and question headings on the top results._\n\n")
     for q in brief.paa_to_answer:
         lines.append(f"- {q}\n")
     lines.append("\n")
@@ -116,7 +116,7 @@ def render_markdown(brief: BriefModel, output_dir: Path) -> Path:
     if brief.internal_link_suggestions:
         lines.append("---\n\n## Internal Linking Suggestions\n\n")
         for link in brief.internal_link_suggestions:
-            lines.append(f"- {link}\n")
+            lines.append(f"- {link['url']}  _(matches: {', '.join(link['matched'])})_\n")
         lines.append("\n")
 
     lines.append("---\n\n## Competitor Analysis\n\n")

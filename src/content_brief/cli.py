@@ -10,7 +10,6 @@ Commands:
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 
 import click
@@ -21,11 +20,12 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from content_brief import __version__
+from content_brief.brief_builder import build_brief
 from content_brief.crawler import fetch_serp_and_pages
 from content_brief.llm_analyzer import analyze_with_llm
 from content_brief.parser import parse_all_pages
-from content_brief.brief_builder import build_brief
-from content_brief.renderer import render_json, render_markdown, render_html
+from content_brief.renderer import render_html, render_json, render_markdown
+from content_brief.sitemap import fetch_sitemap_urls, suggest_internal_links
 
 load_dotenv()
 
@@ -35,7 +35,14 @@ _DEFAULT_OUTPUT_DIR = Path("output")
 _DEFAULT_TEMPLATE_DIR = Path(__file__).parent.parent.parent / "templates"
 
 
-def _resolve_template_dir(explicit: Optional[Path] = None) -> Path:
+async def _load_sitemap(url: str) -> list[str]:
+    import httpx
+
+    async with httpx.AsyncClient() as client:
+        return await fetch_sitemap_urls(url, client)
+
+
+def _resolve_template_dir(explicit: Path | None = None) -> Path:
     """Find the templates directory relative to the package install location."""
     if explicit:
         return explicit
@@ -51,7 +58,6 @@ def _resolve_template_dir(explicit: Optional[Path] = None) -> Path:
 @click.version_option(__version__, prog_name="brief")
 def cli() -> None:
     """llm-content-brief-engine — Generate SEO content briefs from SERP + LLM analysis."""
-    pass
 
 
 @cli.command("generate")
@@ -95,9 +101,9 @@ def cli() -> None:
 def generate_command(
     keyword: str,
     output_dir: str,
-    model: Optional[str],
+    model: str | None,
     max_results: int,
-    sitemap: Optional[str],
+    sitemap: str | None,
     dry_run: bool,
     crawl_delay: float,
 ) -> None:
@@ -132,7 +138,7 @@ def generate_command(
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Parsing headings, entities, PAA…", total=None)
+        task = progress.add_task("Parsing headings, entities, questions…", total=None)
         parsed_pages = parse_all_pages(serp_result.pages)
         progress.update(task, description=f"✓ Parsed {len(parsed_pages)} pages")
 
@@ -165,15 +171,27 @@ def generate_command(
             raise SystemExit(1)
         progress.update(task, description="✓ LLM analysis complete")
 
-    # --- Phase 4: Build BriefModel ---
+    # --- Phase 4: Internal link suggestions from your sitemap (optional) ---
+    link_suggestions: list[dict] = []
+    if sitemap:
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console) as progress:
+            task = progress.add_task("Reading sitemap for internal link suggestions…", total=None)
+            urls = asyncio.run(_load_sitemap(sitemap))
+            link_suggestions = suggest_internal_links(
+                keyword, [h.text for h in analysis.heading_structure], urls
+            )
+            progress.update(task, description=f"✓ {len(urls)} sitemap URLs scanned, {len(link_suggestions)} suggested")
+
+    # --- Phase 5: Build BriefModel ---
     brief = build_brief(
         keyword=keyword,
         parsed_pages=parsed_pages,
         analysis=analysis,
+        internal_link_suggestions=link_suggestions,
         sitemap_url=sitemap,
     )
 
-    # --- Phase 5: Render outputs ---
+    # --- Phase 6: Render outputs ---
     template_dir = _DEFAULT_TEMPLATE_DIR
 
     json_path = render_json(brief, out_path)
@@ -197,8 +215,10 @@ def generate_command(
     table.add_row("Headings suggested", str(len(brief.heading_structure)))
     table.add_row("Entities to cover", str(len(brief.entities_to_cover)))
     table.add_row("Competitor gaps", str(len(brief.competitor_gaps)))
-    table.add_row("PAA questions", str(len(brief.paa_to_answer)))
+    table.add_row("Questions to answer", str(len(brief.paa_to_answer)))
     table.add_row("Competitors analyzed", str(len(brief.competitors)))
+    if sitemap:
+        table.add_row("Internal links suggested", str(len(brief.internal_link_suggestions)))
     console.print(table)
 
     console.print("\n[bold green]Output files:[/bold green]")
@@ -238,8 +258,6 @@ def list_command(output_dir: str) -> None:
 
 
 # Allow Optional usage before importing
-from typing import Optional  # noqa: E402
-
 
 if __name__ == "__main__":
     cli()

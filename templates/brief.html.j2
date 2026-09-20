@@ -39,6 +39,7 @@
     .gap-card .topic { font-weight: 700; }
     .gap-card .coverage { font-size: .8rem; color: #6b7280; margin-top: .15rem; }
     .gap-card .opp { font-size: .9rem; margin-top: .3rem; }
+    .muted { color: #777; font-size: .9rem; }
     .paa-list { list-style: disc; padding-left: 1.5rem; }
     .paa-list li { margin-bottom: .4rem; }
     .hook-card { background: var(--gray-50); border-radius: 8px; padding: .75rem 1rem;
@@ -105,14 +106,15 @@
       {% for gap in brief.competitor_gaps %}
       <div class="gap-card">
         <div class="topic">{{ gap.topic }}</div>
-        <div class="coverage">Covered by {{ gap.coverage_pct }}% of top results</div>
+        <div class="coverage">Covered by {{ gap.coverage_pct }}% of crawled results (measured)</div>
         <div class="opp">{{ gap.opportunity }}</div>
       </div>
       {% endfor %}
     </div>
 
     <div class="section">
-      <h2>People Also Ask — Address These</h2>
+      <h2>Questions to Answer</h2>
+      <p class="muted">Harvested from related searches, FAQ schema and question headings on the top results.</p>
       <ul class="paa-list">
         {% for q in brief.paa_to_answer %}
         <li>{{ q }}</li>
@@ -135,7 +137,7 @@
       <h2>Internal Linking Suggestions</h2>
       <ul class="paa-list">
         {% for link in brief.internal_link_suggestions %}
-        <li><a href="{{ link }}" rel="noopener">{{ link }}</a></li>
+        <li><a href="{{ link.url }}" rel="noopener">{{ link.url }}</a> <span class="muted">— matches: {{ link.matched | join(", ") }}</span></li>
         {% endfor %}
       </ul>
     </div>
