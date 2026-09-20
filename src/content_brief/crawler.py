@@ -13,7 +13,6 @@ import time
 import urllib.parse
 import urllib.robotparser
 from dataclasses import dataclass, field
-from typing import Optional
 
 import httpx
 from bs4 import BeautifulSoup
@@ -23,7 +22,7 @@ console = Console()
 
 # User-agent presented to sites during crawling
 _UA = (
-    "Mozilla/5.0 (compatible; llm-content-brief-engine/0.3; "
+    "Mozilla/5.0 (compatible; llm-content-brief-engine/0.4; "
     "+https://github.com/mehranmoghadasi/llm-content-brief-engine)"
 )
 _HEADERS = {"User-Agent": _UA, "Accept-Language": "en-US,en;q=0.9"}
@@ -40,7 +39,7 @@ class PageResult:
     html: str
     status_code: int
     fetch_time_ms: float
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -80,8 +79,8 @@ def _is_allowed_by_robots(url: str, user_agent: str = "*") -> bool:
     try:
         rp.read()
         return rp.can_fetch(user_agent, url)
-    except Exception:
-        # If robots.txt is unreachable, assume allowed
+    except (OSError, ValueError):
+        # If robots.txt is unreachable or malformed, assume allowed
         return True
 
 
@@ -92,7 +91,7 @@ async def _fetch_url(
     backoff_base: float = 1.5,
 ) -> PageResult:
     """Download a single URL with retry + exponential backoff."""
-    last_error: Optional[str] = None
+    last_error: str | None = None
     for attempt in range(retries):
         try:
             t0 = time.monotonic()
@@ -154,7 +153,7 @@ async def fetch_serp_and_pages(
                 )
                 return result
             organic_urls = _parse_ddg_organic_urls(serp_resp.text, max_results)
-        except Exception as exc:
+        except (httpx.HTTPError, ValueError) as exc:
             console.print(f"[red]SERP fetch failed: {exc}[/red]")
             return result
 

@@ -2,21 +2,21 @@
 llm_analyzer.py — LLM inference: synthesize SERP signals into a content brief.
 
 Constructs a structured prompt from aggregated SERP signals and queries
-the configured LLM (OpenAI GPT-4o/4o-mini or Anthropic Claude via compatible
-endpoint). Returns a validated BriefAnalysis Pydantic model.
+the configured LLM: OpenAI GPT-4o/4o-mini, or any OpenAI-compatible endpoint
+(Ollama, OpenRouter, LM Studio …) via the OPENAI_BASE_URL environment variable.
+Returns a validated BriefAnalysis Pydantic model.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from typing import Any, Optional
+from typing import Any
 
 from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator
 
 from content_brief.parser import ParsedPage
-
 
 # ---------------------------------------------------------------------------
 # Pydantic models for LLM response
@@ -25,14 +25,14 @@ from content_brief.parser import ParsedPage
 class HeadingSuggestion(BaseModel):
     level: int = Field(..., ge=1, le=3, description="Heading level: 1, 2, or 3")
     text: str = Field(..., min_length=5, description="Heading text")
-    notes: Optional[str] = Field(None, description="Optional notes for the writer")
+    notes: str | None = Field(None, description="Optional notes for the writer")
 
 
 class CompetitorGap(BaseModel):
     topic: str = Field(..., description="Topic or angle underrepresented in top results")
     coverage_pct: int = Field(
         ..., ge=0, le=100,
-        description="Percentage of top results covering this topic (0-100)"
+        description="LLM's estimate of top-result coverage; replaced by a measured value in brief_builder"
     )
     opportunity: str = Field(..., description="Why this gap represents an opportunity")
 
@@ -56,7 +56,7 @@ class BriefAnalysis(BaseModel):
         ..., description="Three alternative opening hook ideas for the article"
     )
     paa_to_answer: list[str] = Field(
-        ..., description="PAA questions the article should address"
+        ..., description="Questions the article should address"
     )
     estimated_internal_links: int = Field(
         default=0, description="Suggested number of internal links"
@@ -91,7 +91,7 @@ def _build_prompt(keyword: str, parsed_pages: list[ParsedPage]) -> str:
             f"\n--- Result {i} ({word_count_note}) ---\n" + "\n".join(h_texts) + "\n"
         )
 
-    # Aggregate PAA questions
+    # Aggregate harvested questions
     all_paa: list[str] = []
     seen: set[str] = set()
     for page in parsed_pages:
@@ -114,7 +114,7 @@ TARGET KEYWORD: "{keyword}"
 COMPETITOR HEADING STRUCTURES:
 {competitor_headings_block}
 
-PEOPLE ALSO ASK / FAQ QUESTIONS:
+QUESTIONS FOUND ON THE TOP RESULTS (related searches, FAQ schema, question headings):
 {paa_block}
 
 WORD COUNT STATS (from top results):
@@ -159,8 +159,8 @@ Rules:
 - word_count_min and word_count_max should be realistic given the competitor data.
 - Include at least 8 heading_structure entries.
 - entities_to_cover should list 8-15 specific named entities, tools, concepts.
-- competitor_gaps should include 3-5 genuine content differentiation opportunities.
-- paa_to_answer should include the most relevant questions from the PAA list above.
+- competitor_gaps should include 3-5 genuine content differentiation opportunities; name each topic with the concrete words a page covering it would use.
+- paa_to_answer should include the most relevant questions from the list above.
 """
     return prompt
 
@@ -177,7 +177,7 @@ def estimate_tokens(prompt: str) -> int:
 def analyze_with_llm(
     keyword: str,
     parsed_pages: list[ParsedPage],
-    model: Optional[str] = None,
+    model: str | None = None,
     dry_run: bool = False,
 ) -> BriefAnalysis:
     """
@@ -219,7 +219,7 @@ def analyze_with_llm(
         )
         raise SystemExit(0)
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, base_url=os.getenv("OPENAI_BASE_URL") or None)
 
     try:
         response = client.chat.completions.create(

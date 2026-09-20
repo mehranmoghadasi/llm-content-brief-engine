@@ -6,17 +6,17 @@ For each page this module extracts:
 - Approximate word count (visible text)
 - Meta title and description
 - Named entity candidates (noun-phrase frequency analysis)
-- People Also Ask questions (from SERP HTML, if present)
+- Question-like text (related searches, FAQ schema, question headings)
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Optional
 
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup, NavigableString
 
 # Tags whose text content to exclude from word count / entity extraction
 _IGNORED_TAGS = {
@@ -38,7 +38,7 @@ _STOP_WORDS = {
     "few", "more", "most", "other", "some", "such", "than", "then", "so",
     "up", "out", "if", "no", "not", "only", "same", "own", "also", "just",
     "about", "into", "through", "after", "over", "between", "your", "our",
-    "their", "my", "we", "you", "he", "she", "i", "us", "me", "him", "her",
+    "my", "we", "you", "he", "she", "i", "us", "me", "him", "her",
 }
 
 
@@ -53,12 +53,13 @@ class ParsedPage:
     """Structured signals extracted from a single crawled page."""
 
     url: str
-    meta_title: Optional[str]
-    meta_description: Optional[str]
+    meta_title: str | None
+    meta_description: str | None
     word_count: int
     headings: list[Heading] = field(default_factory=list)
     top_entities: list[tuple[str, int]] = field(default_factory=list)  # (entity, freq)
-    paa_questions: list[str] = field(default_factory=list)  # if SERP page
+    paa_questions: list[str] = field(default_factory=list)  # question-like text found on the page
+    text: str = ""  # lower-cased visible text, kept for coverage measurement
 
 
 def _get_visible_text(soup: BeautifulSoup) -> str:
@@ -85,7 +86,7 @@ def _extract_headings(soup: BeautifulSoup) -> list[Heading]:
     return headings
 
 
-def _extract_meta(soup: BeautifulSoup) -> tuple[Optional[str], Optional[str]]:
+def _extract_meta(soup: BeautifulSoup) -> tuple[str | None, str | None]:
     """Return (meta_title, meta_description)."""
     title_tag = soup.find("title")
     title = title_tag.get_text(strip=True) if title_tag else None
@@ -125,8 +126,9 @@ def _extract_entities(text: str, top_n: int = 20) -> list[tuple[str, int]]:
 
 def _extract_paa_questions(soup: BeautifulSoup) -> list[str]:
     """
-    Extract People Also Ask questions from a SERP page (DuckDuckGo or Google HTML).
-    Falls back to FAQ schema if present on a regular page.
+    Harvest question-like text. Google's People Also Ask box is not available without a
+    SERP API, so this collects the next-best proxies: DuckDuckGo related searches (when
+    the page is a DDG SERP), FAQPage schema questions, and H2/H3 headings ending in "?".
     """
     questions: list[str] = []
 
@@ -160,7 +162,7 @@ def parse_page(url: str, html: str) -> ParsedPage:
         html: Raw HTML content of the page.
 
     Returns:
-        ParsedPage with headings, word count, meta, entities, PAA questions.
+        ParsedPage with headings, word count, meta, entities, questions and text.
     """
     soup = BeautifulSoup(html, "lxml")
 
@@ -179,6 +181,7 @@ def parse_page(url: str, html: str) -> ParsedPage:
         headings=headings,
         top_entities=entities,
         paa_questions=paa,
+        text=visible_text.lower(),
     )
 
 
@@ -190,7 +193,7 @@ def parse_all_pages(pages: list) -> list[ParsedPage]:
             continue
         try:
             parsed.append(parse_page(page.url, page.html))
-        except Exception:
-            # Parsing errors on individual pages are non-fatal
+        except (ValueError, AttributeError, TypeError) as exc:  # parsing errors on one page are non-fatal
+            logging.getLogger(__name__).warning("Skipping %s: %s", page.url, exc)
             continue
     return parsed
