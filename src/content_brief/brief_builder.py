@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
+from content_brief.gaps import measure_gaps
 from content_brief.llm_analyzer import BriefAnalysis
 from content_brief.parser import ParsedPage
 
@@ -22,7 +22,7 @@ class CompetitorSummary:
 
     rank: int
     url: str
-    meta_title: Optional[str]
+    meta_title: str | None
     word_count: int
     h2_headings: list[str]
 
@@ -55,8 +55,8 @@ class BriefModel:
     avg_competitor_word_count: int
 
     # Optional
-    internal_link_suggestions: list[str] = field(default_factory=list)
-    sitemap_url: Optional[str] = None
+    internal_link_suggestions: list[dict] = field(default_factory=list)  # [{url, score, matched}]
+    sitemap_url: str | None = None
 
 
 def _aggregate_entities(parsed_pages: list[ParsedPage], top_n: int = 20) -> list[tuple[str, int]]:
@@ -102,8 +102,8 @@ def build_brief(
     keyword: str,
     parsed_pages: list[ParsedPage],
     analysis: BriefAnalysis,
-    internal_link_suggestions: Optional[list[str]] = None,
-    sitemap_url: Optional[str] = None,
+    internal_link_suggestions: list[dict] | None = None,
+    sitemap_url: str | None = None,
 ) -> BriefModel:
     """
     Compose the final BriefModel from parsed pages and LLM analysis.
@@ -112,7 +112,7 @@ def build_brief(
         keyword: Target keyword string.
         parsed_pages: Pages parsed by the parser module.
         analysis: BriefAnalysis returned by the LLM analyzer.
-        internal_link_suggestions: Optional list of internal URLs suggested from sitemap.
+        internal_link_suggestions: Optional [{url, score, matched}] from sitemap.suggest_internal_links.
         sitemap_url: The sitemap URL used for internal link lookup (for display).
 
     Returns:
@@ -127,11 +127,12 @@ def build_brief(
     avg_wc = int(sum(word_counts) / len(word_counts)) if word_counts else 0
 
     heading_structure = [h.model_dump() for h in analysis.heading_structure]
-    competitor_gaps = [g.model_dump() for g in analysis.competitor_gaps]
+    # Replace the LLM's guessed coverage with a number measured on the crawled pages.
+    competitor_gaps = measure_gaps([g.model_dump() for g in analysis.competitor_gaps], parsed_pages)
 
     return BriefModel(
         keyword=keyword,
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        generated_at=datetime.now(UTC).isoformat(),
         search_intent=analysis.search_intent,
         word_count_min=analysis.word_count_min,
         word_count_max=analysis.word_count_max,
