@@ -2,6 +2,7 @@
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://python.org)
+[![Tests](https://img.shields.io/badge/tests-22%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Last Commit](https://img.shields.io/github/last-commit/mehranmoghadasi/llm-content-brief-engine)](https://github.com/mehranmoghadasi/llm-content-brief-engine)
 
 > An open-source Python CLI that transforms a single target keyword into a fully structured SEO content brief — crawling top organic results, extracting competitor signals, and running LLM analysis to produce a ready-to-use brief in HTML, Markdown, and JSON formats in under 60 seconds.
@@ -10,12 +11,12 @@
 Mockup — Terminal + HTML Brief Output
 
 ╔══════════════════════════════════════════════════════════╗
-║  llm-content-brief-engine  v0.3.0                        ║
+║  llm-content-brief-engine  v0.4.0                        ║
 ║  Keyword: "email marketing automation for agencies"      ║
 ╠══════════════════════════════════════════════════════════╣
 ║  ✓ Crawled 10 SERP results           [2.4s]              ║
 ║  ✓ Parsed headings + entities        [0.8s]              ║
-║  ✓ Aggregated PAA questions (12)     [0.3s]              ║
+║  ✓ Harvested 12 questions            [0.3s]              ║
 ║  ✓ LLM analysis complete             [6.1s]              ║
 ╠══════════════════════════════════════════════════════════╣
 ║  Brief Summary                                           ║
@@ -43,14 +44,14 @@ Agencies write content briefs by manually visiting 10+ SERP results, copy-pastin
 
 ## Features
 
-- **SERP crawling** — fetches top 10 organic result URLs for a keyword (via DuckDuckGo HTML or SerpAPI when a key is provided)
-- **Structural extraction** — parses each page for H1/H2/H3 hierarchy, approximate word count, meta description, and canonical URL
+- **SERP crawling** — fetches the top organic result URLs for a keyword from DuckDuckGo's HTML endpoint (no API key; see Limitations), then downloads each page with a polite delay and `robots.txt` check
+- **Structural extraction** — parses each page for H1/H2/H3 hierarchy, visible-text word count, and meta title/description
 - **Entity aggregation** — uses frequency analysis across all results to surface the named entities and topics that dominate the competitive landscape
-- **PAA harvesting** — extracts People Also Ask questions directly from SERP HTML for inclusion in the brief's FAQ/subheading suggestions
-- **LLM brief synthesis** — sends aggregated signals to OpenAI (GPT-4o or GPT-4o-mini) or Anthropic (Claude 3.5 Sonnet) to generate: recommended word count range, heading structure, topics not covered by competitors, entity checklist, and opening hook suggestions
+- **Question harvesting** — collects DuckDuckGo related searches, FAQPage-schema questions and question-style H2/H3s from the top results as the brief's "questions to answer" (Google's People Also Ask box is not available without a paid SERP API)
+- **LLM brief synthesis** — sends the aggregated signals to OpenAI (GPT-4o / GPT-4o-mini) — or any OpenAI-compatible endpoint such as Ollama, OpenRouter or LM Studio via `OPENAI_BASE_URL` — and validates the JSON response with Pydantic: word-count range, heading structure, entity checklist, opening hooks, meta title/description
 - **Three output formats** — JSON (machine-readable, useful as pipeline input), Markdown (for CMS paste), and styled HTML (for sharing with writers)
-- **Competitor gap detection** — identifies topics covered by <30% of top results but present in PAA, flagging content differentiation opportunities
-- **Optional sitemap integration** — if you provide a sitemap URL, the CLI suggests internal linking anchors from existing content
+- **Measured competitor gaps** — the LLM proposes gap topics, then `gaps.py` checks each one against the crawled pages' text and headings and reports the *measured* coverage; anything more than half the SERP already covers is dropped, so the brief never calls a table-stakes topic a "gap"
+- **Sitemap-based internal links** — `--sitemap` fetches your XML sitemap (indexes included) and ranks your own URLs by slug overlap with the keyword and suggested headings, so the writer gets concrete internal-link targets
 - **Dry-run / cost estimate mode** — shows token estimate and approximate API cost before sending any LLM request
 - **Configurable via `.env`** — API keys, model selection, output directory, max results all environment-configured; no hardcoded values
 - **Rate-limit safe** — crawling uses configurable delays and respects `robots.txt` directives for each target URL
@@ -62,9 +63,11 @@ flowchart TD
     A[CLI: brief generate --keyword] --> B[SERP Fetcher]
     B -->|Top 10 URLs| C[Page Crawler]
     C -->|Raw HTML per page| D[HTML Parser]
-    D -->|Headings, word count, entities, PAA| E[Signal Aggregator]
+    D -->|Headings, word count, entities, questions| E[Signal Aggregator]
     E -->|Aggregated signals JSON| F[LLM Analyzer]
     F -->|Brief JSON response| G[Brief Builder]
+    D -->|Page text| N[gaps.py: measured coverage]
+    N --> G
     G -->|BriefModel Pydantic| H[Renderer]
     H -->|.json| I[JSON Output]
     H -->|.md| J[Markdown Output]
@@ -79,23 +82,23 @@ flowchart TD
     style G fill:#bbf,stroke:#333
 ```
 
-**Key tradeoffs:** Crawling 10 pages adds 2–5 seconds of latency but grounds the LLM output in actual SERP reality rather than hallucinated competitor content. The Pydantic `BriefModel` acts as a contract between the LLM response parser and the renderers — if the LLM returns malformed JSON the parser falls back gracefully and flags incomplete sections rather than crashing.
+**Key tradeoffs:** Crawling 10 pages adds 2–5 seconds of latency but grounds the LLM output in actual SERP reality rather than hallucinated competitor content. The Pydantic `BriefModel` acts as a contract between the LLM response parser and the renderers — if the LLM returns malformed JSON the CLI reports the validation error and exits non-zero rather than writing a half-empty brief.
 
 ## Tech Stack
 
 - **Language:** Python 3.11+
-- **HTTP client:** `httpx` (async, with retry middleware)
+- **HTTP client:** `httpx` (async)
 - **HTML parsing:** `beautifulsoup4` + `lxml`
-- **LLM integration:** `openai` SDK (also supports Anthropic via API-compatible endpoint)
+- **LLM integration:** `openai` SDK; `OPENAI_BASE_URL` for OpenAI-compatible servers
 - **Data validation:** `pydantic` v2
 - **Templating:** `jinja2` (HTML brief)
 - **CLI:** `click` + `rich` (progress bars, tables, colored output)
 - **Config:** `python-dotenv`
-- **Testing:** `pytest` + `pytest-httpx` for mocked HTTP responses
+- **Testing:** `pytest` (+ `pytest-asyncio`); HTTP is mocked with `httpx.MockTransport`; lint: `ruff`
 
 ## Installation
 
-**Prerequisites:** Python 3.11+, pip, an OpenAI or Anthropic API key.
+**Prerequisites:** Python 3.11+, pip, an OpenAI API key (or an OpenAI-compatible local/remote endpoint).
 
 ```bash
 # Clone and install
@@ -105,7 +108,7 @@ pip install -e ".[dev]"
 
 # Configure environment
 cp .env.example .env
-# Edit .env — set OPENAI_API_KEY (or ANTHROPIC_API_KEY + ANTHROPIC_MODEL)
+# Edit .env — set OPENAI_API_KEY (and optionally OPENAI_BASE_URL)
 
 # Verify installation
 brief --version
@@ -185,12 +188,18 @@ COMPETITOR GAP OPPORTUNITIES (covered by <30% of results):
   2. "GDPR-compliant multi-client email management" — 1/10 covers this
   3. "Email automation ROI calculator" — 0/10 include a calculation tool
 
-PAA QUESTIONS TO ADDRESS:
+QUESTIONS TO ANSWER:
   1. What is the best email automation tool for marketing agencies?
   2. How much does agency email automation cost?
   3. Can I manage multiple clients from one email automation platform?
   4. What is the difference between drip campaigns and triggered emails?
 ```
+
+## Limitations
+
+- **SERP source.** Results come from DuckDuckGo's HTML endpoint, which rate-limits scrapers; a run that returns zero URLs is usually that, not a bug. Retry after a minute or lower `--max-results`. A real SERP API (SerpAPI, DataForSEO) would be the production choice and is the first roadmap item.
+- **No People Also Ask.** Google's PAA box is only available through paid SERP APIs. The "questions to answer" list is harvested from related searches, FAQ schema and question headings instead.
+- **Gap measurement is lexical.** `gaps.py` checks whether a topic's content words appear on a page; it will miss synonyms. It is still far more honest than the LLM's guess, and every reported percentage is reproducible from the crawl.
 
 ## Roadmap
 
@@ -215,7 +224,9 @@ llm-content-brief-engine/
 │   └── content_brief/
 │       ├── __init__.py
 │       ├── crawler.py          # SERP + page fetching (httpx async)
-│       ├── parser.py           # HTML extraction: headings, entities, word count, PAA
+│       ├── parser.py           # HTML extraction: headings, entities, word count, questions, text
+│       ├── gaps.py             # measured competitor coverage for LLM-proposed gap topics
+│       ├── sitemap.py          # sitemap fetch + internal-link ranking
 │       ├── llm_analyzer.py     # LLM API call, prompt construction, response parsing
 │       ├── brief_builder.py    # assembles BriefModel from parsed signals + LLM output
 │       ├── renderer.py         # Jinja2 HTML + Markdown + JSON rendering
@@ -223,10 +234,12 @@ llm-content-brief-engine/
 ├── templates/
 │   └── brief.html.j2           # Jinja2 HTML brief template
 ├── tests/
-│   ├── conftest.py
 │   ├── test_crawler.py
 │   ├── test_parser.py
-│   └── test_brief_builder.py
+│   ├── test_brief_builder.py
+│   ├── test_gaps.py
+│   └── test_sitemap.py
+├── ci/python-app.yml           # GitHub Actions workflow (copy to .github/workflows/)
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   └── USAGE.md
@@ -239,10 +252,16 @@ llm-content-brief-engine/
 
 Issues and PRs are welcome — especially for additional LLM provider adapters (Gemini, Mistral) and SERP data source integrations. Please open an issue before a large PR to discuss approach.
 
+## Changelog
+
+- **0.4.0 (2026-09-19)** — Honest-feature release. Implemented the two features the README had promised but the code lacked: `--sitemap` now really fetches the sitemap and ranks internal-link targets (`sitemap.py`), and competitor gaps now carry a coverage percentage *measured* on the crawled pages instead of a number the LLM made up (`gaps.py`; topics covered by >50% of the SERP are dropped). Removed the claim of Anthropic support (the code only ever called the OpenAI SDK) and added `OPENAI_BASE_URL` for OpenAI-compatible endpoints. Renamed "PAA harvesting" to what it does. Added `test_crawler.py`, `test_gaps.py`, `test_sitemap.py`, the promised `examples/sample_brief.md` and `docs/USAGE.md`. Narrowed blind `except Exception` handlers.
+- **0.3.0** — crawler, parser, LLM analysis, three renderers.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
 ## About the Author
 
-[Mehran Moghadasi](https://github.com/mehranmoghadasi) is a digital marketing specialist and technical SEO practitioner focused on building open-source tooling that replaces expensive SaaS workflows for agencies. This project is part of a portfolio of marketing engineering tools at [github.com/mehranmoghadasi](https://github.com/mehranmoghadasi).
+**Mehran Moghadasi** — Digital Marketing & Brand Manager (SEO · Google Ads · Meta Ads · Social Media), Calgary, AB. Builds open-source tooling that replaces expensive SaaS workflows for agencies.
+[github.com/mehranmoghadasi](https://github.com/mehranmoghadasi) · [linkedin.com/in/mehranmoghadasi](https://www.linkedin.com/in/mehranmoghadasi)
