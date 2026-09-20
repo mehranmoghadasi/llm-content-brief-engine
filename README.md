@@ -2,7 +2,7 @@
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-brightgreen.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/tests-22%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![CI](https://github.com/mehranmoghadasi/llm-content-brief-engine/actions/workflows/python-app.yml/badge.svg)](https://github.com/mehranmoghadasi/llm-content-brief-engine/actions/workflows/python-app.yml)
 [![Last Commit](https://img.shields.io/github/last-commit/mehranmoghadasi/llm-content-brief-engine)](https://github.com/mehranmoghadasi/llm-content-brief-engine)
 
 > An open-source Python CLI that transforms a single target keyword into a fully structured SEO content brief — crawling top organic results, extracting competitor signals, and running LLM analysis to produce a ready-to-use brief in HTML, Markdown, and JSON formats in under 60 seconds.
@@ -239,7 +239,7 @@ llm-content-brief-engine/
 │   ├── test_brief_builder.py
 │   ├── test_gaps.py
 │   └── test_sitemap.py
-├── ci/python-app.yml           # GitHub Actions workflow (copy to .github/workflows/)
+├── ci/python-app.yml           # GitHub Actions workflow (also installed at .github/workflows/)
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   └── USAGE.md
